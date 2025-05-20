@@ -1,0 +1,20 @@
+# Rust target directory
+/target
+
+# Cargo lock file
+Cargo.lock
+
+# IDE-specific files
+.idea/
+.vscode/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Environment configuration files (if any, e.g. .env)
+# .env
+
