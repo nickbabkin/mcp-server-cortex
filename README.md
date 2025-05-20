@@ -1,5 +1,7 @@
 # MCP Server for Cortex
 
+![Claude Cortex Session](media/claude-cortex-session.png)
+
 This server acts as a bridge, exposing the powerful analysis capabilities of a [Cortex](https://thehive-project.org/cortex/) instance as tools consumable by Model Context Protocol (MCP) clients, such as large language models like Claude. It allows these clients to leverage Cortex analyzers for threat intelligence tasks.
 
 ## What is Cortex?
