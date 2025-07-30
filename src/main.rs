@@ -344,6 +344,22 @@ struct AnalyzeUrlWithUrlscanIoParams {
     max_retries: Option<usize>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct GetReportWithVirusTotalParams {
+    #[schemars(description = "The data to analyze (e.g., an IP, domain, FQDN, URL, email, file, or hash).")]
+    data: String,
+    #[schemars(
+        description = "The type of the data. Must be one of: 'ip', 'domain', 'fqdn', 'url', 'mail', 'file', 'hash'."
+    )]
+    data_type: String,
+    #[schemars(
+        description = "Optional: The name of the VirusTotal GetReport analyzer instance in Cortex. Defaults to 'VirusTotal_GetReport_3_1'."
+    )]
+    analyzer_name: Option<String>,
+    #[schemars(description = "Optional: Maximum number of retries to wait for the analyzer job to complete. Defaults to 5.")]
+    max_retries: Option<usize>,
+}
+
 #[derive(Clone)]
 struct CortexToolsServer {
     cortex_config: Arc<cortex_client::apis::configuration::Configuration>,
@@ -786,6 +802,126 @@ impl CortexToolsServer {
             }
         }
     }
+
+    #[tool(
+        name = "get_report_with_virustotal",
+        description = "Gets a report for a given observable (IP, domain, FQDN, URL, mail, file, hash) using VirusTotal GetReport via Cortex. Returns the job report if successful."
+    )]
+    async fn get_report_with_virustotal(
+        &self,
+        #[tool(aggr)] params: GetReportWithVirusTotalParams,
+    ) -> Result<CallToolResult, McpError> {
+        let data_to_analyze = params.data;
+        let data_type = params.data_type.to_lowercase(); // Normalize to lowercase
+        let analyzer_name_to_run = params
+            .analyzer_name
+            .unwrap_or_else(|| "VirusTotal_GetReport_3_1".to_string());
+
+        let allowed_data_types = ["ip", "domain", "fqdn", "url", "mail", "file", "hash"];
+        if !allowed_data_types.contains(&data_type.as_str()) {
+            let err_msg = format!(
+                "Invalid data_type '{}'. Must be one of: {:?}",
+                data_type, allowed_data_types
+            );
+            tracing::error!("{}", err_msg);
+            return Ok(CallToolResult::error(vec![Content::text(err_msg)]));
+        }
+
+        tracing::info!(
+            data = %data_to_analyze,
+            data_type = %data_type,
+            analyzer = %analyzer_name_to_run,
+            "Attempting to get VirusTotal report"
+        );
+
+        let analyzer_worker_id = match common::get_analyzer_id_by_name(
+            &self.cortex_config,
+            &analyzer_name_to_run,
+        )
+        .await
+        {
+            Ok(Some(id)) => id,
+            Ok(None) => {
+                let err_msg = format!(
+                    "Could not find an analyzer instance named '{}'. Ensure it's enabled in Cortex.",
+                    analyzer_name_to_run
+                );
+                tracing::error!("{}", err_msg);
+                return Ok(CallToolResult::error(vec![Content::text(err_msg)]));
+            }
+            Err(e) => {
+                let err_msg = format!(
+                    "Error getting analyzer ID for '{}': {}",
+                    analyzer_name_to_run, e
+                );
+                tracing::error!("{}", err_msg);
+                return Ok(CallToolResult::error(vec![Content::text(err_msg)]));
+            }
+        };
+
+        tracing::info!(
+            "Attempting to run analyzer '{}' (ID: '{}') on data: {}, type: {}",
+            analyzer_name_to_run,
+            analyzer_worker_id,
+            data_to_analyze,
+            data_type
+        );
+
+        let job_create_request = cortex_client::models::JobCreateRequest {
+            data: Some(data_to_analyze.clone()),
+            data_type: Some(data_type.clone()),
+            tlp: Some(2), // AMBER
+            pap: Some(2), // AMBER
+            message: Some(Some(format!(
+                "MCP Cortex Server: Getting VirusTotal report for {} ({}) with {}",
+                data_to_analyze, data_type, analyzer_name_to_run
+            ))),
+            parameters: None,
+            label: Some(Some(format!(
+                "mcp_virustotal_report_{}_{}_{}",
+                data_type, data_to_analyze, chrono::Utc::now().timestamp()
+            ))),
+            force: Some(false),
+            attributes: None,
+        };
+
+        let max_retries = params.max_retries.unwrap_or(5);
+        match common::run_job_and_wait_for_report(
+            &self.cortex_config,
+            &analyzer_worker_id,
+            job_create_request,
+            &analyzer_name_to_run,
+            &format!("{} ({})", data_to_analyze, data_type),
+            max_retries,
+        )
+        .await
+        {
+            Ok(report_response) => {
+                tracing::info!(
+                    "Successfully obtained VirusTotal report for data '{}' ({}) using analyzer {}",
+                    data_to_analyze,
+                    data_type,
+                    analyzer_name_to_run
+                );
+                let success_content = json!({
+                    "status": "success",
+                    "report": report_response
+                });
+                Ok(CallToolResult::success(vec![
+                    Content::json(success_content)
+                        .map_err(|e| McpError::internal_error(e.to_string(), None))?,
+                ]))
+            }
+            Err(e) => {
+                let err_msg = format!(
+                    "Error running analyzer '{}' for data '{}' ({}) and waiting for report: {:?}",
+                    analyzer_name_to_run, data_to_analyze, data_type, e
+                );
+                tracing::error!("{}", err_msg);
+                Ok(CallToolResult::error(vec![Content::text(err_msg)]))
+            }
+        }
+    }
 }
 
 #[tool(tool_box)]
@@ -807,7 +943,9 @@ impl ServerHandler for CortexToolsServer {
                 - 'analyze_with_abusefinder': Analyzes data (IP, domain, FQDN, URL, or mail) using the AbuseFinder analyzer. \
                 Requires 'data', 'data_type' (one of 'ip', 'domain', 'fqdn', 'url', 'mail'), and optionally 'analyzer_name' (defaults to 'AbuseFinder_3_0').\n\
                 - 'scan_url_with_virustotal': Scans a URL using the VirusTotal analyzer. Requires 'url' and optionally 'analyzer_name' (defaults to 'VirusTotal_Scan_3_1').\n\
-                - 'analyze_url_with_urlscan_io': Analyzes a URL using the Urlscan.io analyzer. Requires 'url' and optionally 'analyzer_name' (defaults to 'Urlscan_io_Scan_0_1_0')."
+                - 'analyze_url_with_urlscan_io': Analyzes a URL using the Urlscan.io analyzer. Requires 'url' and optionally 'analyzer_name' (defaults to 'Urlscan_io_Scan_0_1_0').\n\
+                - 'get_report_with_virustotal': Gets a report for various observables using VirusTotal GetReport. \
+                Requires 'data', 'data_type' (one of 'ip', 'domain', 'fqdn', 'url', 'mail', 'file', 'hash'), and optionally 'analyzer_name' (defaults to 'VirusTotal_GetReport_3_1')."
                     .to_string(),
             ),
         }

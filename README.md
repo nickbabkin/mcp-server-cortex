@@ -70,6 +70,8 @@ The tools currently use the following analyzers by default (though these can oft
     *   AbuseFinder might have its own configuration requirements or dependencies within Cortex.
 *   **`scan_url_with_virustotal`**: Uses an analyzer like `VirusTotal_Scan_3_1`.
     *   This analyzer requires a VirusTotal API key. Ensure this is configured in Cortex.
+*   **`get_report_with_virustotal`**: Uses an analyzer like `VirusTotal_GetReport_3_1`.
+    *   This analyzer requires a VirusTotal API key. Ensure this is configured in Cortex.
 *   **`analyze_url_with_urlscan_io`**: Uses an analyzer like `Urlscan_io_Scan_0_1_0`.
     *   This analyzer requires an API key for urlscan.io. Ensure this is configured in Cortex.
 
@@ -145,6 +147,14 @@ The server provides the following tools, which can be called by an MCP client:
     *   **Parameters**:
         *   `url` (string, required): The URL to analyze.
         *   `analyzer_name` (string, optional): The specific name of the Urlscan.io analyzer instance in Cortex. Defaults to `Urlscan_io_Scan_0_1_0`.
+        *   `max_retries` (integer, optional): Maximum number of times to poll for the analyzer job to complete. Defaults to 5.
+
+5.  **`get_report_with_virustotal`**
+    *   **Description**: Gets a report for a given observable (IP, domain, FQDN, URL, mail, file, hash) using VirusTotal GetReport via Cortex. Returns the job report if successful.
+    *   **Parameters**:
+        *   `data` (string, required): The data to analyze (e.g., "1.1.1.1", "example.com", "http://example.com", "test@example.com", hash value, etc.).
+        *   `data_type` (string, required): The type of the data. Must be one of: `ip`, `domain`, `fqdn`, `url`, `mail`, `file`, `hash`.
+        *   `analyzer_name` (string, optional): The specific name of the VirusTotal GetReport analyzer instance in Cortex. Defaults to `VirusTotal_GetReport_3_1`.
         *   `max_retries` (integer, optional): Maximum number of times to poll for the analyzer job to complete. Defaults to 5.
 
 
