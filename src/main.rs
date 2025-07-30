@@ -879,7 +879,7 @@ impl CortexToolsServer {
             parameters: None,
             label: Some(Some(format!(
                 "mcp_virustotal_report_{}_{}_{}",
-                data_type, data_to_analyze, chrono::Utc::now().timestamp()
+                data_type, data_to_analyze 
             ))),
             force: Some(false),
             attributes: None,
